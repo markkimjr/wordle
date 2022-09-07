@@ -78,6 +78,7 @@ func (u Ufc) ScrapeInfo() []*UfcSaveInfo {
 // scrapeEspnFighterNames gets all MMA fighter names from ESPN
 func (u Ufc) scrapeEspnFighterNames(i string, ch chan<- []string) {
 	var fighterNames []string
+	fighterMap := make(map[string]bool) // check for duplicate fighter names
 	res, err := http.Get(fmt.Sprintf("%v%v", espnURL, i))
 	CheckErr(err)
 	defer res.Body.Close()
@@ -86,11 +87,17 @@ func (u Ufc) scrapeEspnFighterNames(i string, ch chan<- []string) {
 		CheckErr(err)
 		doc.Find(".evenrow").Each(func(i int, s *goquery.Selection) {
 			fighterName := s.Find("a").Text()
-			fighterNames = append(fighterNames, fighterName)
+			if _, ok := fighterMap[fighterName]; !ok {
+				fighterNames = append(fighterNames, fighterName)
+				fighterMap[fighterName] = true
+			}
 		})
 		doc.Find(".oddrow").Each(func(i int, s *goquery.Selection) {
 			fighterName := s.Find("a").Text()
-			fighterNames = append(fighterNames, fighterName)
+			if _, ok := fighterMap[fighterName]; !ok {
+				fighterNames = append(fighterNames, fighterName)
+				fighterMap[fighterName] = true
+			}
 		})
 	}
 
