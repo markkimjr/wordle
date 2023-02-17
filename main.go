@@ -15,15 +15,16 @@ const (
 	ufcURL  = "https://www.ufc.com/athlete/"
 )
 
-type Scraper interface {
-	ScrapeInfo()
+// Extractor interface for wordle expansion (can add more wordle games --> boxing next?)
+type Extractor interface {
+	ExtractInfo()
 	SaveInfo()
 }
 
 type Ufc struct {
 }
 
-type UfcSaveInfo struct {
+type UfcFighter struct {
 	Name             string  `bson:"name"`
 	Nickname         string  `bson:"nickname"`
 	Status           string  `bson:"status"`
@@ -51,7 +52,7 @@ func (u Ufc) SaveInfo() {
 
 }
 
-func (u Ufc) ScrapeInfo() []*UfcSaveInfo {
+func (u Ufc) ExtractInfo() []*UfcFighter {
 	var allFighterNames []string
 	ch := make(chan []string)
 	for i := 'a'; i <= 'z'; i++ {
@@ -62,23 +63,23 @@ func (u Ufc) ScrapeInfo() []*UfcSaveInfo {
 		}
 	}
 
-	var fighterSaveInfo []*UfcSaveInfo
-	ch2 := make(chan *UfcSaveInfo)
+	var ufcFighters []*UfcFighter
+	ch2 := make(chan *UfcFighter)
 	for _, fighterName := range allFighterNames {
-		go u.scrapeUfcFighterInfo(fighterName, ch2)
+		u.scrapeUfcFighterInfo(fighterName, ch2)
 		fighterInfo := <-ch2
 		if fighterInfo.Name != "" {
-			fighterSaveInfo = append(fighterSaveInfo, fighterInfo)
+			ufcFighters = append(ufcFighters, fighterInfo)
 		}
 	}
 
-	return fighterSaveInfo
+	return ufcFighters
 }
 
 // scrapeEspnFighterNames gets all MMA fighter names from ESPN
 func (u Ufc) scrapeEspnFighterNames(i string, ch chan<- []string) {
 	var fighterNames []string
-	fighterMap := make(map[string]bool) // check for duplicate fighter names
+	duplicateFighterTracker := make(map[string]bool) // check for duplicate fighter names
 	res, err := http.Get(fmt.Sprintf("%v%v", espnURL, i))
 	CheckErr(err)
 	defer res.Body.Close()
@@ -87,16 +88,16 @@ func (u Ufc) scrapeEspnFighterNames(i string, ch chan<- []string) {
 		CheckErr(err)
 		doc.Find(".evenrow").Each(func(i int, s *goquery.Selection) {
 			fighterName := s.Find("a").Text()
-			if _, ok := fighterMap[fighterName]; !ok {
+			if _, ok := duplicateFighterTracker[fighterName]; !ok {
 				fighterNames = append(fighterNames, fighterName)
-				fighterMap[fighterName] = true
+				duplicateFighterTracker[fighterName] = true
 			}
 		})
 		doc.Find(".oddrow").Each(func(i int, s *goquery.Selection) {
 			fighterName := s.Find("a").Text()
-			if _, ok := fighterMap[fighterName]; !ok {
+			if _, ok := duplicateFighterTracker[fighterName]; !ok {
 				fighterNames = append(fighterNames, fighterName)
-				fighterMap[fighterName] = true
+				duplicateFighterTracker[fighterName] = true
 			}
 		})
 	}
@@ -105,23 +106,23 @@ func (u Ufc) scrapeEspnFighterNames(i string, ch chan<- []string) {
 }
 
 // scrapeUfcFighterInfo requests UFC player profiles; if request is successful, creates UfcFighterSaveInfo struct
-func (u Ufc) scrapeUfcFighterInfo(fighterName string, ch chan<- *UfcSaveInfo) {
+func (u Ufc) scrapeUfcFighterInfo(fighterName string, ch chan<- *UfcFighter) {
 	split := strings.Split(fighterName, ",")
 	rearrangedFighterName := fmt.Sprintf("%v-%v", strings.ToLower(split[1]), strings.ToLower(split[0]))
 
 	url := fmt.Sprintf("%v%v", ufcURL, rearrangedFighterName)
 	res, err := http.Get(url)
 	CheckErr(err)
-	fighter := UfcSaveInfo{}
+	fighter := UfcFighter{}
 	if res.StatusCode == 200 {
-		fighter = u.parseUfcFighterHtml(res.Body)
+		fighter = u.parseUfcHtml(res.Body)
 	}
 
 	ch <- &fighter
 }
 
-// parseUfcFighterHtml parses UFC HTML to get fighter record, active status, division, age, gender, nickname, wins by submission, wins by knockout, striking accuracy, takedown accuracy
-func (u Ufc) parseUfcFighterHtml(resBody io.ReadCloser) UfcSaveInfo {
+// parseUfcHtml parses UFC HTML to get fighter record, active status, division, age, gender, nickname, wins by submission, wins by knockout, striking accuracy, takedown accuracy
+func (u Ufc) parseUfcHtml(resBody io.ReadCloser) UfcFighter {
 	doc, err := goquery.NewDocumentFromReader(resBody)
 	CheckErr(err)
 	name := doc.Find(".hero-profile__name").Text()
@@ -174,7 +175,7 @@ func (u Ufc) parseUfcFighterHtml(resBody io.ReadCloser) UfcSaveInfo {
 	CheckErr(err)
 	reachFloat := float32(reachInt)
 
-	fighter := UfcSaveInfo{
+	fighter := UfcFighter{
 		Name:             name,
 		Nickname:         nickname,
 		Status:           statusList[1],
@@ -196,5 +197,5 @@ func (u Ufc) parseUfcFighterHtml(resBody io.ReadCloser) UfcSaveInfo {
 
 func main() {
 	u := Ufc{}
-	u.ScrapeInfo()
+	u.ExtractInfo()
 }
